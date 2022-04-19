@@ -1,4 +1,3 @@
-from collections import defaultdict
 from argparse import ArgumentParser
 
 from pulp import LpProblem, LpBinary, LpVariable, lpSum, PULP_CBC_CMD, LpStatus
@@ -16,20 +15,28 @@ def argparser():
 
 
 def read_problem(path):
-    problem = defaultdict(list)
+    picross = {"row": list(), "column": list()}
     for line in open(path):
+        line = line.rstrip("\n")
         if "row" in line:
             mode = "row"
         elif "column" in line:
             mode = "column"
         else:
-            breakpoint()
-            line = list(map(int, line.rstrip("\n").split(" ")))
-            problem[mode].append(line)
-    return problem
+            try:
+                line = list(map(int, line.split(" ")))
+                picross[mode].append(line)
+            except Exception:
+                pass
+    assert len(picross["row"]) == len(picross["column"])
+    assert len(picross["row"]) != 0
+    return picross
 
 
-def main():
+def main(picross):
+    row = picross["row"]
+    column = picross["column"]
+
     problem = LpProblem("Picross")
 
     x = [
@@ -144,6 +151,5 @@ def main():
 if __name__ == "__main__":
     parser = argparser()
     args = parser.parse_args()
-    problem = read_problem(args.problem)
-    breakpoint()
-    # main()
+    picross = read_problem(args.problem)
+    main(picross)
