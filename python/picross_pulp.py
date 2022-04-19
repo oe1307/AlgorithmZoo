@@ -1,6 +1,32 @@
+from collections import defaultdict
+from argparse import ArgumentParser
+
 from pulp import LpProblem, LpBinary, LpVariable, lpSum, PULP_CBC_CMD, LpStatus
 
-from storage.picross import row, column
+
+def argparser():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "-r",
+        "--problem",
+        type=str,
+        required=True,
+    )
+    return parser
+
+
+def read_problem(path):
+    problem = defaultdict(list)
+    for line in open(path):
+        if "row" in line:
+            mode = "row"
+        elif "column" in line:
+            mode = "column"
+        else:
+            breakpoint()
+            line = list(map(int, line.rstrip("\n").split(" ")))
+            problem[mode].append(line)
+    return problem
 
 
 def main():
@@ -116,4 +142,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparser()
+    args = parser.parse_args()
+    problem = read_problem(args.problem)
+    breakpoint()
+    # main()
