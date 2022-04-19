@@ -38,6 +38,9 @@ def print_maze(maze):
 
 def main(maze, position):
     print_maze(maze)
+
+    print("\n" + "  " * (len(maze[0]) // 2) + "↓" + "  " * (len(maze[0]) // 2) + "\n")
+
     maze_map = deepcopy(maze)
     search_points = [position["start"]]
     time = 0
@@ -58,6 +61,7 @@ def main(maze, position):
                 next_search.append((point[0], point[1] + 1))
                 maze_map[point[0]][point[1] + 1] = str(time)
         search_points = next_search
+    print_maze(maze_map)
 
     print("\n" + "  " * (len(maze[0]) // 2) + "↓" + "  " * (len(maze[0]) // 2) + "\n")
 
