@@ -39,6 +39,7 @@ def main(capacity, database):
             else:
                 dp[i + 1][cap + 1] = dp[i][cap + 1]
     print(pd.DataFrame(dp))
+    print(f"最大値: {dp[-1][-1]}")
 
 
 if __name__ == "__main__":
