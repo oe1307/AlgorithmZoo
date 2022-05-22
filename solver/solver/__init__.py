@@ -1,5 +1,6 @@
 from solver.branch_and_bound import BranchAndBound
 from solver.simplex_method import SimplexMethod
+from solver.interior_point_method import InteriorPointMethod
 from solver._pulp import Pulp
 
 
