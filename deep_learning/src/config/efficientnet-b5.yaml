@@ -1,0 +1,61 @@
+# best epoch: 55 with score: 92.16477966477969
+
+model_name: efficientnet-b5
+validation: True
+
+dataset:
+    train: ../data/train
+    train_metadata: ../data/train_meta.json
+    num_remove: 10
+    valid: 0.15
+    valid_epoch: 3
+    transforms: [h_flip, v_flip, rotation, crop]
+
+trainer:
+    num_epoch: 150
+    max_norm: 2
+
+    argumentation:
+        name: mixup
+        probability: 0.5
+        alpha: 1.0
+
+    loss:
+        name: adacos # ['arcface', 'adacos', 'curricularface']
+        criterion: cross_entropy # ['cross_entropy', 'focal_loss']
+        gamma_for_focal_loss: 2
+        easy_margin: False
+        margin: 0.2
+        s: 32
+
+    optimizer:
+        name: adamw # ['adam', 'adamw', 'sgd']
+        lr_pretrained_model: 1.0e-4
+        lr_linear_for_model_number: 1.0e-2
+        lr_linear_for_category: 1.0e-2
+        lr_linear_for_color: 1.0e-2
+        lr_margin_penalty: 1.0e-2
+        beta1: 0.9
+        beta2: 0.999
+        weight_decay: 5.e-4
+
+    multi_task:
+        model_number:
+            flag: True
+            loss: cross_entropy # ['cross_entropy', 'focal_loss']
+            gamma: 2
+            weight: 0.5
+        category:
+            flag: True
+            loss: cross_entropy # ['cross_entropy', 'focal_loss']
+            gamma: 2
+            weight: 0.5
+        color:
+            flag: True
+            loss: focal_loss # ['cross_entropy', 'focal_loss']
+            gamma: 2
+            weight: 0.1
+
+    knn:
+        method: weighted # ["center", "weighted", "nearest", None]
+        metric: cosine # ['euclidean', 'cosine']
