@@ -1,6 +1,6 @@
 model2size = (
     {
-        # _EfficientNet
+        # EfficientNetPytorch
         "efficientnet-b0": 224,
         "efficientnet-b1": 240,
         "efficientnet-b2": 260,
@@ -9,17 +9,6 @@ model2size = (
         "efficientnet-b5": 456,
         "efficientnet-b6": 528,
         "efficientnet-b7": 600,
-    }
-    | {
-        # EffientNetV2
-        "tf_efficientnet_b0_ns": 224,
-        "tf_efficientnet_b1_ns": 240,
-        "tf_efficientnet_b2_ns": 260,
-        "tf_efficientnet_b3_ns": 300,
-        "tf_efficientnet_b4_ns": 380,
-        "tf_efficientnet_b5_ns": 456,
-        "tf_efficientnet_b6_ns": 528,
-        "tf_efficientnet_b7_ns": 600,
     }
     | {
         # EfficientNet
@@ -31,6 +20,17 @@ model2size = (
         "tf_efficientnetv2_m": 384,
         "tf_efficientnetv2_l": 384,
         "tf_efficientnetv2_xl": 384,
+    }
+    | {
+        # EfficientNetV2
+        "tf_efficientnet_b0_ns": 224,
+        "tf_efficientnet_b1_ns": 240,
+        "tf_efficientnet_b2_ns": 260,
+        "tf_efficientnet_b3_ns": 300,
+        "tf_efficientnet_b4_ns": 380,
+        "tf_efficientnet_b5_ns": 456,
+        "tf_efficientnet_b6_ns": 528,
+        "tf_efficientnet_b7_ns": 600,
     }
     | {
         # GoogleVisionTransformer
