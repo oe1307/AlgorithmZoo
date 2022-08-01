@@ -156,6 +156,6 @@ if __name__ == "__main__":
         config.save_dir = rename_dir("../result/valid/" + config.save_dir)
     else:
         config.save_dir = rename_dir("../result/all_data/" + config.save_dir)
-    config.datatime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    config.datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     json.dump(config, open(config.save_dir + "/config.json", "w"), indent=4)
     main(config)
