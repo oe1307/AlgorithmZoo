@@ -1,7 +1,6 @@
 import re
 
 from PIL import Image
-import torch.nn.functional as F
 from torch.utils.data import Dataset as _Dataset
 from torchvision import transforms as T
 from sklearn.preprocessing import LabelEncoder
