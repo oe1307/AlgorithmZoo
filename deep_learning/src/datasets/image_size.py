@@ -1,5 +1,13 @@
 model2size = (
     {
+        # ConvNext
+        "convnext_tiny_in22k": 224,
+        "convnext_small_in22k": 224,
+        "convnext_base_in22k": 224,
+        "convnext_large_in22k": 224,
+        "convnext_xlarge_in22k": 224,
+    }
+    | {
         # EfficientNetPytorch
         "efficientnet-b0": 224,
         "efficientnet-b1": 240,
@@ -16,13 +24,17 @@ model2size = (
         "tf_efficientnetv2_b1": 192,
         "tf_efficientnetv2_b2": 208,
         "tf_efficientnetv2_b3": 240,
+        "tf_efficientnetv2_b4": 380,
+        "tf_efficientnetv2_b5": 456,
+        "tf_efficientnetv2_b6": 528,
+        "tf_efficientnetv2_b7": 600,
         "tf_efficientnetv2_s": 300,
         "tf_efficientnetv2_m": 384,
         "tf_efficientnetv2_l": 384,
         "tf_efficientnetv2_xl": 384,
     }
     | {
-        # EfficientNetV2
+        # EffientNetV2
         "tf_efficientnet_b0_ns": 224,
         "tf_efficientnet_b1_ns": 240,
         "tf_efficientnet_b2_ns": 260,
@@ -62,6 +74,7 @@ model2size = (
         "swin_large_patch4_window12_384": 384,
         "swin_large_patch4_window7_224": 224,
         "swin_large_patch4_window7_224": 224,
+        "swin_base_patch4_window12_384_in22k": 384,
     }
     | {
         # SwinTransformerV2

@@ -1,4 +1,4 @@
-model_name: efficientnet-b5
+model_name: swin_base_patch4_window12_384
 validation: True
 
 dataset:

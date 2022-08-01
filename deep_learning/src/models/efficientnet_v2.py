@@ -2,7 +2,7 @@ import timm
 import torch.nn as nn
 
 
-class SwinTransformer(nn.Module):
+class EfficientNetV2(nn.Module):
     def __init__(self, model_name, num_model_number, num_category, num_color):
         super().__init__()
         self.backbone = timm.create_model(

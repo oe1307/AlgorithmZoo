@@ -2,15 +2,15 @@ model_name: efficientnet-b5
 validation: True
 
 dataset:
-    train: ../data/train
+    train: ../data/argumentation
     train_metadata: ../data/train_meta.json
     num_remove: 10
     valid: 0.15
-    valid_epoch: 3
-    transforms: [h_flip, v_flip, rotation, erasing]
+    valid_epoch: 1
+    transforms: [flip, erasing]
 
 trainer:
-    num_epoch: 50
+    num_epoch: 30
     max_norm: 2
 
     argumentation:
@@ -23,8 +23,8 @@ trainer:
         criterion: cross_entropy # ['cross_entropy', 'focal_loss']
         gamma_for_focal_loss: 2
         easy_margin: False
-        margin: 0.2
         s: 32
+        m: 0.2
 
     optimizer:
         name: adamw # ['adam', 'adamw', 'sgd']
@@ -52,7 +52,7 @@ trainer:
             flag: True
             loss: focal_loss # ['cross_entropy', 'focal_loss']
             gamma: 2
-            weight: 0.1
+            weight: 0.5
 
     knn:
         method: nearest # ["center", "weighted", "nearest", None]

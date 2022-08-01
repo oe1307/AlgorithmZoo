@@ -1,0 +1,27 @@
+--find-links https://download.pytorch.org/whl/cu116/torch_stable.html
+# base
+pip
+scipy
+numpy
+black
+pandas
+pyyaml
+pillow
+flake8
+colorlog
+attrdict
+opencv-python
+
+# dev
+scikit-learn
+torch==1.12.0+cu116
+torchvision==0.13.0+cu116
+
+# pretrained models
+timm
+transformers
+efficientnet_pytorch
+
+# analize the data
+notebook
+matplotlib

@@ -17,7 +17,7 @@ class ArcFace(nn.Module):
         self.W = Parameter(torch.FloatTensor(self.n_classes, self.num_features))
         nn.init.xavier_uniform_(self.W)
 
-    def forward(self, embeddings, labels):
+    def forward(self, embeddings, labels, index=None):
         x = F.normalize(embeddings)
         W = F.normalize(self.W)
         logits = F.linear(x, W)
@@ -25,6 +25,10 @@ class ArcFace(nn.Module):
         target_logits = torch.cos(theta + self.margin)
         one_hot = torch.zeros_like(logits)
         one_hot.scatter_(1, labels.view(-1, 1).long(), 1)
+        if index is not None:
+            perm_one_hot = torch.zeros_like(one_hot)
+            perm_one_hot.scatter_(1, labels[index].view(-1, 1).long(), 1)
+            one_hot = one_hot + perm_one_hot
         output = logits * (1 - one_hot) + target_logits * one_hot
         output *= self.s
 

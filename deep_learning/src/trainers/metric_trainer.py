@@ -4,7 +4,7 @@ import pandas as pd
 import torch.nn as nn
 from torch import optim
 from scipy import spatial
-from torchvision import transforms
+from torchvision import transforms as T
 from torch.nn.parallel import DataParallel
 
 from .loss import FocalLoss, ArcFace, AdaCos, CurricularFace
@@ -27,7 +27,7 @@ class MetricLearningTrainer:
 
         self.config = config
 
-        self.to_pillow = transforms.Compose([transforms.ToPILImage()])
+        self.to_pillow = T.Compose([T.ToPILImage()])
 
         # モデルを並列化
         self.model = self.set_cuda(model)
@@ -54,7 +54,7 @@ class MetricLearningTrainer:
         # 最適化関数を設定
         params = [
             {
-                "params": model.model.parameters(),
+                "params": model.backbone.parameters(),
                 "lr": config.trainer.optimizer.lr_pretrained_model,
             },
             {
@@ -128,25 +128,28 @@ class MetricLearningTrainer:
 
         if self.config.validation:
             print(
-                "epoch,score,valid score,unknown score",
+                "epoch,score,train score,valid score,unknown score",
                 file=open(self.config.save_dir + "/result.csv", "w"),
             )
             for epoch in range(self.config.trainer.num_epoch):
                 # train
                 self.model.train()
                 self.train_per_epoch(epoch)
+                torch.cuda.empty_cache()
 
                 # valid
                 if epoch % self.config.dataset.valid_epoch == 0:
                     self.model.eval()
-                    embedding_info = self.embedding(epoch)
+                    embedding_info, train_score = self.embedding(epoch)
+                    torch.cuda.empty_cache()
                     score = self.valid_per_epoch(embedding_info, epoch)
+                    torch.cuda.empty_cache()
                     print(
-                        f"score: {score[0]:.2f} "
-                        + f"valid: {score[1]:.2f} unknown: {score[2]:.2f}\n"
+                        f"score: {score[0]:.2f} train: {train_score:.2f} "
+                        + f"valid: {score[1]:.2f} unknown: {score[2]:.2f}\n",
                     )
                     print(
-                        f"{epoch},{score[0]},{score[1]},{score[2]}",
+                        f"{epoch},{score[0]},{train_score},{score[1]},{score[2]}",
                         file=open(self.config.save_dir + "/result.csv", "a"),
                     )
         else:
@@ -155,6 +158,7 @@ class MetricLearningTrainer:
                     # train
                     self.model.train()
                     self.train_per_epoch(epoch)
+                    torch.cuda.empty_cache()
                     torch.save(
                         self.model.module.state_dict(),
                         self.config.save_dir + f"model_epoch{epoch + 1}.pth",
@@ -164,6 +168,7 @@ class MetricLearningTrainer:
                     # train
                     self.model.train()
                     self.train_per_epoch(epoch)
+                    torch.cuda.empty_cache()
                     torch.save(
                         self.model.state_dict(),
                         f"{self.config.save_dir}/model_epoch{epoch + 1}.pth",
@@ -294,268 +299,168 @@ class MetricLearningTrainer:
     # Embedding空間に埋め込むメソッド
     @torch.no_grad()
     def embedding(self, epoch):
-        # 埋め込みベクトル情報を格納する辞書を定義
+        name = ["embedding", "reference"]
+        train_score = 0
         embedding_info = []
-        model_number_encoder = self.embedding_dataloader.dataset.model_number_encoder
 
-        for i, data in enumerate(self.embedding_dataloader):
-            step = int((i + 1) / len(self.embedding_dataloader) * 10)
-            print(
-                f"\rembedding epoch:{epoch + 1} ["
-                + "#" * step
-                + " " * (10 - step)
-                + f"] {i + 1}/{len(self.embedding_dataloader)}",
-                end="",
-            )
-            # 画像、型番、カテゴリ、色
-            images, model_numbers = data[:2]
-            images = images.to(self.device)
-            model_numbers = model_number_encoder.inverse_transform(model_numbers)
+        for n, dataloader in enumerate(
+            [self.embedding_dataloader, self.reference_dataloader]
+        ):
+            model_number_encoder = dataloader.dataset.model_number_encoder
+            for i, data in enumerate(dataloader):
+                step = int((i + 1) / len(dataloader) * 10)
+                print(
+                    f"\r{name[n]} epoch:{epoch + 1} ["
+                    + "#" * step
+                    + " " * (10 - step)
+                    + f"] {i + 1}/{len(dataloader)}",
+                    end="",
+                )
+                # 画像、型番、カテゴリ、色
+                images, model_numbers = data[:2]
+                images = images.to(self.device)
 
-            embedding = self.model(images)[0]
-            embedding = embedding.detach().to("cpu").numpy()
+                embedding, pred_model_number = self.model(images)[:2]
 
-            # 埋め込みベクトル情報を追加していく
-            for embed, model_number in zip(embedding, model_numbers):
-                embedding_info.append((model_number, embed))
+                if name[n] == "embedding":
+                    topk = min(10, dataloader.dataset.num_model_number)
+                    pred_model_number = pred_model_number.topk(topk, dim=1)
+                    pred_model_number = pred_model_number.indices.cpu()
+                    _model_numbers = model_numbers.expand_as(pred_model_number.T)
+                    _score = (pred_model_number.T == _model_numbers).T
+                    train_score += (
+                        (_score * (1 / torch.arange(1, topk + 1))).sum().item()
+                    )
 
-        print(f"\rembedding epoch:{epoch + 1} [" + "#" * 10 + f"] {i + 1}/{i + 1}")
+                embedding = embedding.detach().cpu().numpy()
+                model_numbers = model_number_encoder.inverse_transform(model_numbers)
 
-        model_number_encoder = self.reference_dataloader.dataset.model_number_encoder
-        for i, data in enumerate(self.reference_dataloader):
-            step = int((i + 1) / len(self.reference_dataloader) * 10)
-            print(
-                f"\rreference epoch:{epoch + 1} ["
-                + "#" * step
-                + " " * (10 - step)
-                + f"] {i + 1}/{len(self.reference_dataloader)}",
-                end="",
-            )
+                # 埋め込みベクトル情報を追加していく
+                for embed, model_number in zip(embedding, model_numbers):
+                    embedding_info.append((model_number, embed))
 
-            images, model_numbers = data[:2]
-            images = images.to(self.device)
-            model_numbers = model_number_encoder.inverse_transform(model_numbers)
+            print(f"\r{name[n]} epoch:{epoch + 1} [" + "#" * 10 + f"] {i + 1}/{i + 1}")
 
-            embedding = self.model(images)[0]
-            embedding = embedding.detach().to("cpu").numpy()
+        train_score = train_score / len(self.embedding_dataloader.dataset) * 100
 
-            # 埋め込みベクトル情報を追加していく
-            for embed, model_number in zip(embedding, model_numbers):
-                embedding_info.append((model_number, embed))
-
-        print(f"\rreference epoch:{epoch + 1} [" + "#" * 10 + f"] {i + 1}/{i + 1}")
-
-        return embedding_info
+        return embedding_info, train_score
 
     @torch.no_grad()
     def valid_per_epoch(self, embedding_info, epoch):
         # 既知型番データローダーのループ処理
         score = [0, 0, 0]
-        valid_img_num = 0
+        name = ["valid", "unknown"]
 
-        model_number_encoder = self.valid_dataloader.dataset.model_number_encoder
-        for i, data in enumerate(self.valid_dataloader):
-            print(
-                f"\rvalidation epoch:{epoch + 1} ["
-                + "#" * int((i + 1) / len(self.valid_dataloader) * 10)
-                + " " * int((1 - (i + 1) / len(self.valid_dataloader)) * 10)
-                + f"] {i + 1}/{len(self.valid_dataloader)}",
-                end="",
-            )
-            # 画像、型番
-            images, model_numbers = data[:2]
-            images = images.to(self.device)
-            model_numbers = model_number_encoder.inverse_transform(model_numbers)
+        for n, dataloader in enumerate(
+            [self.valid_dataloader, self.unknown_dataloader]
+        ):
+            model_number_encoder = dataloader.dataset.model_number_encoder
+            for i, data in enumerate(dataloader):
+                print(
+                    f"\r{name[n]} epoch:{epoch + 1} ["
+                    + "#" * int((i + 1) / len(dataloader) * 10)
+                    + " " * int((1 - (i + 1) / len(dataloader)) * 10)
+                    + f"] {i + 1}/{len(dataloader)}",
+                    end="",
+                )
+                # 画像、型番
+                images, model_numbers = data[:2]
+                images = images.to(self.device)
+                model_numbers = model_number_encoder.inverse_transform(model_numbers)
 
-            # モデルへ入力する
-            embedding, pred_model_number = self.model(images)[:2]
-            embedding = embedding.detach().to("cpu").numpy()
+                # モデルへ入力する
+                embedding, pred_model_number = self.model(images)[:2]
+                embedding = embedding.detach().cpu().numpy()
 
-            # knnに基づく予測を計算する
-            if self.config.trainer.knn.method == "center":
-                embedding_df = pd.DataFrame(
-                    embedding_info, columns=["model_number", "embedding"]
-                )
-                embedding_df = embedding_df.groupby("model_number").mean()
-                distances = spatial.distance.cdist(
-                    embedding,
-                    list(embedding_df["embedding"].values),
-                    self.config.trainer.knn.metric,
-                )
-                for dist, model_number in zip(distances, model_numbers):
-                    valid_img_num += 1
-                    embedding_df["distance"] = dist
-                    _embedding_df = embedding_df.sort_values("distance")
-                    MAPatR = _embedding_df[:10]["model_number"].values.tolist()
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[1] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            elif self.config.trainer.knn.method == "weighted":
-                embedding_df = pd.DataFrame(
-                    embedding_info, columns=["model_number", "embedding"]
-                )
-                distances = spatial.distance.cdist(
-                    embedding,
-                    list(embedding_df["embedding"].values),
-                    self.config.trainer.knn.metric,
-                )
-                for dist, model_number in zip(distances, model_numbers):
-                    valid_img_num += 1
-                    embedding_df["distance"] = dist
-                    _embedding_df = embedding_df.sort_values("distance")
-                    _embedding_df["score"] = 1 / np.arange(1, len(embedding_df) + 1)
-                    _embedding_df["score"] = _embedding_df.groupby("model_number")[
-                        "score"
-                    ].sum()
-                    _embedding_df = _embedding_df.sort_values("score")
-                    MAPatR = _embedding_df[:10]["model_number"].values.tolist()
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[1] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            elif self.config.trainer.knn.method == "nearest":
-                embedding_df = pd.DataFrame(
-                    embedding_info, columns=["model_number", "embedding"]
-                )
-                distances = spatial.distance.cdist(
-                    embedding,
-                    list(embedding_df["embedding"].values),
-                    self.config.trainer.knn.metric,
-                )
-                for dist, model_number in zip(distances, model_numbers):
-                    valid_img_num += 1
-                    embedding_df["distance"] = dist
-                    _embedding_df = embedding_df.sort_values("distance")
-                    _embedding_df = _embedding_df.drop_duplicates("model_number")
-                    MAPatR = _embedding_df[:10]["model_number"].values.tolist()
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[1] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            elif self.config.trainer.knn.method is None:
-                pred_model_number = pred_model_number.detach().to("cpu").numpy()
-                MAPatR = np.argsort(pred_model_number)[::-1][:10].tolist()
-                for model_number in model_numbers:
-                    valid_img_num += 1
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[1] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            else:
-                raise ValueError(
-                    f"knn.method is invalid. {self.config.trainer.knn.method}"
-                )
+                # knnに基づく予測を計算する
+                if self.config.trainer.knn.method == "center":
+                    embedding_df = pd.DataFrame(
+                        embedding_info, columns=["model_number", "embedding"]
+                    )
+                    embedding_df = embedding_df.groupby("model_number").mean()
+                    distances = spatial.distance.cdist(
+                        embedding,
+                        list(embedding_df["embedding"].values),
+                        self.config.trainer.knn.metric,
+                    )
+                    for dist, model_number in zip(distances, model_numbers):
+                        embedding_df["distance"] = dist
+                        _embedding_df = embedding_df.sort_values("distance")
+                        MAPatR = _embedding_df[:10]["model_number"].values.tolist()
+                        if model_number in MAPatR:
+                            logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
+                            score[n + 1] += 1 / (MAPatR.index(model_number) + 1)
+                        else:
+                            logger.info("MAP@10: x")
 
-        print(f"\rvalidation epoch:{epoch + 1} [" + "#" * 10 + f"] {i + 1}/{i + 1}")
+                elif self.config.trainer.knn.method == "nearest":
+                    embedding_df = pd.DataFrame(
+                        embedding_info, columns=["model_number", "embedding"]
+                    )
+                    distances = spatial.distance.cdist(
+                        embedding,
+                        list(embedding_df["embedding"].values),
+                        self.config.trainer.knn.metric,
+                    )
+                    for dist, model_number in zip(distances, model_numbers):
+                        embedding_df["distance"] = dist
+                        _embedding_df = embedding_df.sort_values("distance")
+                        _embedding_df = _embedding_df.drop_duplicates("model_number")
+                        MAPatR = _embedding_df[:10]["model_number"].values.tolist()
+                        if model_number in MAPatR:
+                            logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
+                            score[n + 1] += 1 / (MAPatR.index(model_number) + 1)
+                        else:
+                            logger.info("MAP@10: x")
 
-        unknown_img_num = 0
+                elif self.config.trainer.knn.method == "weighted":
+                    embedding_df = pd.DataFrame(
+                        embedding_info, columns=["model_number", "embedding"]
+                    )
+                    distances = spatial.distance.cdist(
+                        embedding,
+                        list(embedding_df["embedding"].values),
+                        self.config.trainer.knn.metric,
+                    )
+                    for dist, model_number in zip(distances, model_numbers):
+                        embedding_df["distance"] = dist
+                        _embedding_df = embedding_df.sort_values("distance")
+                        _embedding_df["score"] = 1 / np.arange(1, len(embedding_df) + 1)
+                        _embedding_df = _embedding_df.groupby("model_number")[
+                            "score"
+                        ].sum()
+                        embedding_info = embedding_info.reset_index()
+                        _embedding_df = _embedding_df.sort_values(
+                            "score", ascending=False
+                        )
+                        MAPatR = _embedding_df[:10]["model_number"].values.tolist()
+                        if model_number in MAPatR:
+                            logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
+                            score[n + 1] += 1 / (MAPatR.index(model_number) + 1)
+                        else:
+                            logger.info("MAP@10: x")
 
-        model_number_encoder = self.unknown_dataloader.dataset.model_number_encoder
-        for i, data in enumerate(self.unknown_dataloader):
-            print(
-                f"\runknown epoch:{epoch + 1} ["
-                + "#" * int((i + 1) / len(self.unknown_dataloader) * 10)
-                + " " * int((1 - (i + 1) / len(self.unknown_dataloader)) * 10)
-                + f"] {i + 1}/{len(self.unknown_dataloader)}",
-                end="",
-            )
-            # 画像、型番
-            images, model_numbers = data[:2]
-            images = images.to(self.device)
-            model_numbers = model_number_encoder.inverse_transform(model_numbers)
+                elif self.config.trainer.knn.method == "linear":
+                    pred_model_number = pred_model_number.detach().cpu().numpy()
+                    MAPatR = np.argsort(pred_model_number)[::-1][:10].tolist()
+                    for model_number in model_numbers:
+                        if model_number in MAPatR:
+                            logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
+                            score[n + 1] += 1 / (MAPatR.index(model_number) + 1)
+                        else:
+                            logger.info("MAP@10: x")
 
-            # モデルへ入力する
-            embedding, pred_model_number = self.model(images)[:2]
-            embedding = embedding.to("cpu").numpy()
+                else:
+                    raise ValueError(
+                        f"knn.method is invalid. {self.config.trainer.knn.method}"
+                    )
 
-            if self.config.trainer.knn.method == "center":
-                embedding_df = pd.DataFrame(
-                    embedding_info, columns=["model_number", "embedding"]
-                )
-                embedding_df = embedding_df.groupby("model_number").mean()
-                distances = spatial.distance.cdist(
-                    embedding,
-                    list(embedding_df["embedding"].values),
-                    self.config.trainer.knn.metric,
-                )
-                for dist, model_number in zip(distances, model_numbers):
-                    unknown_img_num += 1
-                    embedding_df["distance"] = dist
-                    _embedding_df = embedding_df.sort_values("distance")
-                    MAPatR = _embedding_df[:10]["model_number"].values.tolist()
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[2] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            elif self.config.trainer.knn.method == "weighted":
-                embedding_df = pd.DataFrame(
-                    embedding_info, columns=["model_number", "embedding"]
-                )
-                distances = spatial.distance.cdist(
-                    embedding,
-                    list(embedding_df["embedding"].values),
-                    self.config.trainer.knn.metric,
-                )
-                for dist, model_number in zip(distances, model_numbers):
-                    unknown_img_num += 1
-                    embedding_df["distance"] = dist
-                    _embedding_df = embedding_df.sort_values("distance")
-                    _embedding_df["score"] = 1 / np.arange(1, len(embedding_df) + 1)
-                    _embedding_df["score"] = _embedding_df.groupby("model_number")[
-                        "score"
-                    ].sum()
-                    _embedding_df = _embedding_df.sort_values("score")
-                    MAPatR = _embedding_df[:10]["model_number"].values.tolist()
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[2] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            elif self.config.trainer.knn.method == "nearest":
-                embedding_df = pd.DataFrame(
-                    embedding_info, columns=["model_number", "embedding"]
-                )
-                distances = spatial.distance.cdist(
-                    embedding,
-                    list(embedding_df["embedding"].values),
-                    self.config.trainer.knn.metric,
-                )
-                for dist, model_number in zip(distances, model_numbers):
-                    unknown_img_num += 1
-                    embedding_df["distance"] = dist
-                    _embedding_df = embedding_df.sort_values("distance")
-                    _embedding_df = _embedding_df.drop_duplicates("model_number")
-                    MAPatR = _embedding_df[:10]["model_number"].values.tolist()
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[2] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            elif self.config.trainer.knn.method is None:
-                pred_model_number = pred_model_number.detach().to("cpu").numpy()
-                MAPatR = np.argsort(pred_model_number)[::-1][:10].tolist()
-                for model_number in model_numbers:
-                    unknown_img_num += 1
-                    if model_number in MAPatR:
-                        logger.info(f"MAP@10: {MAPatR.index(model_number) + 1}")
-                        score[2] += 1 / (MAPatR.index(model_number) + 1)
-                    else:
-                        logger.info("MAP@10: x")
-            else:
-                raise ValueError(
-                    f"knn.method is invalid. {self.config.trainer.knn.method}"
-                )
+            print(f"\r{name[n]} epoch:{epoch + 1} [" + "#" * 10 + f"] {i + 1}/{i + 1}")
 
-        print(f"\runknown epoch:{epoch + 1} [" + "#" * 10 + f"] {i + 1}/{i + 1}")
-
-        score[0] = (score[1] + score[2]) / (valid_img_num + unknown_img_num) * 100
-        score[1] = score[1] / valid_img_num * 100
-        score[2] = score[2] / unknown_img_num * 100
+        num_valid = len(self.valid_dataloader.dataset)
+        num_unknown = len(self.unknown_dataloader.dataset)
+        score[0] = (score[1] + score[2]) / (num_valid + num_unknown) * 100
+        score[1] = score[1] / num_valid * 100
+        score[2] = score[2] / num_unknown * 100
 
         return score

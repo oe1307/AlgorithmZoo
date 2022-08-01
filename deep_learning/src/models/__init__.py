@@ -1,9 +1,10 @@
-from .efficientnet import EfficientNet
-from .swin_transformer import SwinTransformer
-from .vision_transformer import VisionTransformer
-from .swin_transformer_v2 import SwinTransformerV2
-from .google_vision_transformer import GoogleVisionTransformer
+from .convnext import ConvNext
 from .efficientnet_pytorch import EfficientNetPytorch
+from .efficientnet import EfficientNet
+from .google_vision_transformer import GoogleVisionTransformer
+from .vision_transformer import VisionTransformer
+from .swin_transformer import SwinTransformer
+from .swin_transformer_v2 import SwinTransformerV2
 
 
 def get_model(model_name, num_model_number, num_category, num_color):
@@ -29,6 +30,9 @@ def get_model(model_name, num_model_number, num_category, num_color):
 
     elif "swin" in model_name:
         model = SwinTransformer(model_name, num_model_number, num_category, num_color)
+
+    elif "convnext" in model_name:
+        model = ConvNext(model_name, num_model_number, num_category, num_color)
 
     else:
         raise ValueError(f"Unknown model name: {model_name}")
